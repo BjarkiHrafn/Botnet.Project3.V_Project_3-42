@@ -34,20 +34,8 @@
 // global variables for simplicity
 std::string SOH = "\01";
 std::string EOT = "\04";
-int connection = 0; // this is not allowed to be higher than 5, need a mutext around the update function
+int connections = 0; // this is not allowed to be higher than 5, need a mutext around the update function
 std::string ID = "V_GROUP_42";
-
-void raiseCounter () {
-// set mutex
-
-// set mutex
-}
-
-void decreaseCounter () {
-// set mutex
-
-// set mutex
-}
 
 // Simple class for handling connections from clients.
 //
@@ -78,6 +66,8 @@ class Server
 
 std::map<int, Client*> clients; // Lookup table for per Client information
 std::map<std::string, Server> servers; // Loopkup table for Server information
+                                       // the key in the table is the server ID
+
 
 // Open socket for specified port.
 //
@@ -129,7 +119,7 @@ int openSocket(int portno)
 
 void closeClient(int clientSocket, fd_set *openSockets, int *maxfds)
 {
-     // Remove client from the clients list
+    // Remove client from the clients list
     clients.erase(clientSocket);
 
     // If this client's socket is maxfds then the next lowest
@@ -149,6 +139,21 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds)
     FD_CLR(clientSocket, openSockets);
 }
 
+void closeServer(std::string id, int serverSocket, fd_set *openSockets, int *maxfds)
+{
+    servers.erase(id);
+
+    if(*maxfds == serverSocket)
+    {
+       for(auto const& p : servers)
+       {
+         *maxfds = std::max(*maxfds, p.second.sockfd);
+       }
+    }
+
+    FD_CLR(serverSocket, openSockets);
+}
+
 // Process command from client on the server
 
 int clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer)
@@ -165,38 +170,6 @@ int clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buff
     if((tokens[0].compare("CONNECT") == 0) && (tokens.size() == 2))
     {
         clients[clientSocket]->name = tokens[1];
-    }
-    // this needs to be changed
-    else if((tokens[0].compare("CONNECT_TO") == 0) && (tokens.size() == 3))
-    {
-        if(*maxfds <= 5) {
-
-            int sockfd;
-            struct sockaddr_in serv_addr;
-            struct hostent *server;
-
-            sockfd = socket(AF_INET, SOCK_STREAM, 0); // Open tcp Socket
-
-            server = gethostbyname(tokens[1].c_str());
-
-            bzero((char *) &serv_addr, sizeof(serv_addr));//fill the serv_addr with zeros
-            serv_addr.sin_family = AF_INET; // This is always set to AF_INET
-            bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-            serv_addr.sin_port = htons(atoi(tokens[2].c_str()));
-
-            if(connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) {
-                printf("Failed to open socket to server: %s\n", tokens[1].c_str());
-                perror("Connect failed: ");
-                exit(0);
-            } else {
-                FD_SET(sockfd, openSockets);
-
-            }
-        } else {
-            printf("Server has maximum connections");
-            perror("Connect failed: ");
-            exit(0);
-        }
     }
     else if(tokens[0].compare("LEAVE") == 0)
     {
@@ -265,10 +238,12 @@ void processServerCommand (char *buffer)
 
     std::vector<std::string> tokens;
     std::string token;
-    std::stringstream stream(buffer);
+    std::istringstream stream(buffer);
 
-    while(stream >> token)
-        tokens.push_back(token);
+    while(std::getline(stream, token, ',')) {
+      std::cout << token << std::endl;
+      tokens.push_back(token);
+    }
 
     if((tokens[0].compare("LISTSERVERS") == 0) &&(tokens.size() == 1))
     {
@@ -317,21 +292,14 @@ void sendServerCommands()
     while(true) {
         std::vector<std::string> tokens;
         std::string token;
-        char buffer[1025];
         std::string serverMsg;
+        char buffer[1025];
         // Split command from server into tokens for parsing
         fgets(buffer, sizeof(buffer), stdin);
-        std::cout << "buffer: " << buffer << std::endl;
-        std::cout << "buffer size: " << strlen(buffer) << std::endl;
-        for(int i = 0; i < strlen(buffer); i++) {
-          if(buffer[i] == ',') {
-            buffer[i] = ' ';
-          }
-        }
+        std::istringstream stream(buffer);
 
-        std::stringstream stream(buffer);
-        while(stream >> token) {
-          std::cout << "token: " << token << std::endl;
+        while(std::getline(stream, token, ',')) {
+          std::cout << token << std::endl;
           tokens.push_back(token);
         }
 
@@ -369,6 +337,7 @@ void sendServerCommands()
         {
             std::cout << "CMD command" << std::endl;
             serverMsg = SOH + buffer + EOT;
+            std::cout << "server: " << (servers[tokens[1]].sockfd) << std::endl;
             if(send(servers[tokens[1]].sockfd, serverMsg.c_str(), serverMsg.length(), 0) == -1) {
                 printf("Failure\n");
             }
@@ -385,6 +354,7 @@ int main(int argc, char* argv[])
     int listenSock;                 // Socket for connections to server
     int listenServerSock;
     int clientSock;                 // Socket of connecting client
+    int serverSock;
     fd_set openSockets;             // Current open sockets
     fd_set readSockets;             // Socket list for select()
     fd_set exceptSockets;           // Exception socket list
@@ -465,60 +435,101 @@ int main(int argc, char* argv[])
             // Accept  any new connections to the server
             // allow servers to connect aswell
             // - assume that it is a server
-            for(int i = 0; i < FD_SETSIZE; i++) {
-                if(FD_ISSET(i, &readSockets))
+            //for(int i = 0; i < FD_SETSIZE; i++) {
+            if(FD_ISSET(listenSock, &readSockets))
+            {
+
+                clientSock = accept(listenSock, (struct sockaddr *)&client, &clientLen);
+
+                FD_SET(clientSock, &openSockets);
+                maxfds = std::max(maxfds, clientSock);
+
+                // add to client map
+                clients[clientSock] = new Client(clientSock);
+                n--;
+
+                //printf("Client connected on server: %s\n", argv[3]);
+                printf("Client connected from host %s, port %hd.\n",
+                       inet_ntoa (client.sin_addr),
+                       ntohs (client.sin_port));
+
+            }
+            else if(FD_ISSET(listenServerSock, &readSockets))
+            {
+                serverSock = accept(listenServerSock, (struct sockaddr *)&client, &clientLen);
+                FD_SET(serverSock, &openSockets);
+                maxfds = std::max(maxfds, serverSock);
+
+                printf("Server connected from host %s, port, %hd.\n",
+                       inet_ntoa (client.sin_addr),
+                       (client.sin_port));
+
+               std::string newServerID = ID; // change this to get ID from server
+               std::pair<std::string, Server> s;
+               s.first = newServerID;
+               s.second.sockfd = serverSock;
+               servers.insert(s);
+            }
+            // Now check for commands from clients
+            for(auto const& pair : clients)
+            {
+                Client *client = pair.second;
+
+                if(FD_ISSET(client->sock, &readSockets))
                 {
-                    if(i==listenServerSock || i == listenSock) {
-
-                        clientSock = accept(i, (struct sockaddr *)&client, &clientLen);
-
-                        FD_SET(clientSock, &openSockets);
-                        maxfds = std::max(maxfds, clientSock);
-
-                        clients[clientSock] = new Client(clientSock);
-                        n--;
-
-                        //printf("Client connected on server: %s\n", argv[3]);
-                        printf("Server: connect from host %s, port %hd.\n",
-                               inet_ntoa (client.sin_addr),
-                               ntohs (client.sin_port));
-                        maxfds = std::max(clientSock, maxfds);
-                    }
-                }
-                // Now check for commands from clients
-                while(n-- > 0)
-                {
-                    for(auto const& pair : clients)
+                    if(recv(client->sock, buffer, sizeof(buffer), MSG_DONTWAIT) == 0)
                     {
-                        Client *client = pair.second;
+                        printf("Client closed connection: %d", client->sock);
+                        close(client->sock);
 
-                        if(FD_ISSET(client->sock, &readSockets))
+                        closeClient(client->sock, &openSockets, &maxfds);
+                    }
+                    else
+                    {
+                        std::cout << "BUFFER: " << buffer << std::endl;
+                        // check if command is server command or client command
+
+                        if(buffer[0] == '\01') {
+                            buffer[strlen(buffer) - 1] = '\0';
+                            processServerCommand(&buffer[1]);
+                        }
+                        else
                         {
-                            if(recv(client->sock, buffer, sizeof(buffer), MSG_DONTWAIT) == 0)
-                            {
-                                printf("Client closed connection: %d", client->sock);
-                                close(client->sock);
-
-                                closeClient(client->sock, &openSockets, &maxfds);
-
-                            }
-                            else
-                            {
-                                std::cout << "BUFFER: " << buffer << std::endl;
-                                // check if command is server command or client command
-
-                                if(buffer[0] == '\01') {
-                                    buffer[strlen(buffer) - 1] = '\0';
-                                    processServerCommand(&buffer[1]);
-                                }
-                                else
-                                {
-                                    clientCommand(client->sock, &openSockets, &maxfds, buffer);
-                                }
-                            }
+                            clientCommand(client->sock, &openSockets, &maxfds, buffer);
                         }
                     }
                 }
+            }
+            for(auto const& pair : servers)
+            {
+               Server server = pair.second;
+               std::cout << "server sockfd: " << server.sockfd << std::endl;
+               if(FD_ISSET(server.sockfd, &readSockets))
+               {
+                   std::cout << "It is set" << std::endl;
+                   if(recv(server.sockfd, buffer, sizeof(buffer), MSG_DONTWAIT) == 0)
+                   {
+                       printf("Server closed connection: %d\n", server.sockfd);
+                       close(server.sockfd);
+
+                       // todo change this to correct id
+                       closeServer("V_GROUP_42" ,server.sockfd, &openSockets, &maxfds);
+                   }
+                   else
+                   {
+                       std::cout << "BUFFER: " << buffer << std::endl;
+                       // check if command is server command or client command
+
+                       if(buffer[0] == '\01') {
+                         buffer[strlen(buffer) - 1] = '\0';
+                          processServerCommand(&buffer[1]);
+                       }
+                       else
+                       {
+                          //clientCommand(client->sock, &openSockets, &maxfds, buffer);
+                       }
+                   }
+               }
             }
         }
     }
