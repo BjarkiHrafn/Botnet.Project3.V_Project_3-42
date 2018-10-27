@@ -1,0 +1,21 @@
+maxfds vs Backlog
+Backlog is for primitive
+maxfds: highest file descriptor that exists
+when a soket is open set the maxfd of the new sockfd
+check if mxfd is removed and set then set it again
+
+client commands vs server commands
+ - who executes what?
+command flow and cmd command
+multiple client connections or only multiple server connections?
+-both
+setja server á skel?
+scp file skel.ru.is:
+scp -a leifur16@skel.ru.is: //copies whole directory
+
+number of ports
+
+best way for a server to connect to servers and restrictions on running commands
+
+send commands between server
+\001 cmd _ _ ID \004

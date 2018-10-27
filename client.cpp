@@ -24,7 +24,6 @@
 
 #include <iostream>
 #include <sstream>
-#include <thread>
 #include <map>
 
 // Threaded function for handling responss from server
