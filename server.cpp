@@ -409,9 +409,9 @@ void sendServerCommands(char* buffer, fd_set *openSockets, int *maxfds)
                 }
             }
         }
-        else if((tokens[0].compare("FETCH") && (tokens.size() == 2))
+        else if((tokens[0].compare("FETCH") && (tokens.size() == 2)))
         {
-            
+
         }
         else {
             std::cout << "Unknown server command: " << buffer << std::endl;
