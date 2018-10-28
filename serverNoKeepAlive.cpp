@@ -158,7 +158,6 @@ void closeServer(int serverSocket, fd_set *openSockets, int *maxfds)
 {
     servers.erase(serverSocket);
 
-    std::cout<< "closing server"<<std::endl;
     if(*maxfds == serverSocket)
     {
        for(auto const& p : servers)
@@ -271,9 +270,7 @@ void processServerCommand (char *buffer, int serverSockfd)
     {
       std::cout << "KEEPALIVE command Recieved" << std::endl;
       //std::cout << "This has not been completed" <<std::endl;
-      keepAliveMtx.lock();
-      servers[serverSockfd]->keepAlive = std::clock();
-      keepAliveMtx.unlock();
+      //servers[serverSockfd]->keepAlive = clock();
     }
     else if((tokens[0].compare("LISTROUTES") == 0) &&(tokens.size() == 1))
     {
@@ -422,7 +419,7 @@ void sendServerCommands(char* buffer, fd_set *openSockets, int *maxfds)
         }
     //}
 }
-
+/*
 void keepAlive()
 {
     std::string keepAliveMsg = SOH + "KEEPALIVE" + EOT;
@@ -431,10 +428,8 @@ void keepAlive()
         keepAliveMtx.lock();
         for(auto const& pair : servers) {
             Server *server = pair.second;
-            double timePassed = servers[server->sockfd]->keepAlive / (double)CLOCKS_PER_SEC;
-            std::cout << "keepAlive: " << servers[server->sockfd]->keepAlive << std::endl;
-            std::cout << "time: "<< timePassed << std::endl;
-            if(timePassed >= 90) {
+            std::cout << "time: "<< servers[server->sockfd]->keepAlive << std::endl;
+            if(servers[server->sockfd]->keepAlive >= 90) {
               std::cout<<servers[server->sockfd] << ", get the fuck out" << std::endl;
               closeServer(server->sockfd, &openSockets , &maxfds);
             }
@@ -446,6 +441,7 @@ void keepAlive()
         keepAliveMtx.unlock();
     }
 }
+*/
 
 int main(int argc, char* argv[])
 {
@@ -458,7 +454,6 @@ int main(int argc, char* argv[])
     fd_set readSockets;             // Socket list for select()
     fd_set exceptSockets;           // Exception socket list
     //int maxfds;                     // Passed to select() as max fd in set
-    maxfds = 0;
     struct sockaddr_in client;
     socklen_t clientLen;
     char buffer[BUFSIZE];              // buffer for reading from clients
@@ -517,7 +512,7 @@ int main(int argc, char* argv[])
     FD_SET(0, &openSockets);
 
     //std::thread serverThread(sendServerCommands, &openSockets, &maxfds)    ;
-    std::thread keepAliveThread(keepAlive);
+    //std::thread keepAliveThread(keepAlive);
 
     finished = false;
 
@@ -588,10 +583,8 @@ int main(int argc, char* argv[])
                     }
 
                     servers[serverSock] = new Server(serverSock);
-                    keepAliveMtx.lock();
-                    servers[serverSock]->keepAlive = std::clock();
-                    keepAliveMtx.unlock();
-                    std::cout<< "Setting timer now" << std::endl;
+
+                    servers[serverSock]->keepAlive = clock();
 
                 }
                 else

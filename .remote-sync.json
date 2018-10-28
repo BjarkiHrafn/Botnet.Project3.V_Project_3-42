@@ -1,0 +1,19 @@
+{
+  "logger": {
+    "title": "Remote Sync"
+  },
+  "uploadOnSave": true,
+  "useAtomicWrites": true,
+  "deleteLocal": false,
+  "hostname": "www.skel.ru.is",
+  "port": "22",
+  "ignore": [
+    ".remote-sync.json",
+    ".git/**"
+  ],
+  "username": "bjarki15",
+  "watch": [],
+  "transport": "scp",
+  "target": "/home/hir.is/bjarki15/chatbot",
+  "password": "Kofun111"
+}
