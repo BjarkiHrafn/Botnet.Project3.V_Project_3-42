@@ -401,7 +401,8 @@ void sendServerCommands(char* buffer, fd_set *openSockets, int *maxfds)
                 }
             }
         }
-        else if((tokens[0].compare("CMD") == 0) && (tokens.size() == 4))
+        // size >= 4 because the command can be longer than just one word, e.g. Fetch
+        else if((tokens[0].compare("CMD") == 0) && (tokens.size() >= 4))
         {
             std::cout << "CMD command" << std::endl;
             serverMsg = SOH + buffer + EOT;
@@ -416,6 +417,10 @@ void sendServerCommands(char* buffer, fd_set *openSockets, int *maxfds)
                     }
                 }
             }
+        }
+        else if((tokens[0].compare("FETCH") && (tokens.size() == 2)))
+        {
+
         }
         else {
             std::cout << "Unknown server command: " << buffer << std::endl;
