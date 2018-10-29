@@ -25,7 +25,6 @@
 #include <sstream>
 #include <thread>
 #include <map>
-#include <ctime> // for the keepAlive timer
 
 #include <mutex>
 #define BUFSIZE 1024
@@ -33,7 +32,6 @@
 
 //mutexes
 std::mutex changeConnections;
-std::mutex keepAliveMtx;
 
 // global variables for simplicity
 std::string SOH = "\01";
@@ -41,8 +39,7 @@ std::string EOT = "\04";
 int connections = 0; // this is not allowed to be higher than 5, need a mutext around the update function
 std::string ID = "V_GROUP_42";
 const int MAXSERVERCONNECTIONS = 5;
-fd_set openSockets;
-int maxfds;
+
 // Simple class for handling connections from clients.
 //
 // Client(int socket) - socket to send/receive traffic from client.
@@ -62,8 +59,6 @@ class Server
     public:
         int sockfd;
         std::string id;
-        clock_t keepAlive;
-
 
         Server(int socket) : sockfd(socket){}
 
@@ -80,6 +75,11 @@ class Server
 std::map<int, Client*> clients; // Lookup table for per Client information
 std::map<int, Server*> servers;  // Loopkup table for Server information
                                 // the key in the table is the server ID
+ std::string uniqueHashArr[5] = {"2990b1f8a30a2766e7d9ca603e22051f",
+                                "31f23ba6e971170f63781be4d88b3ceb",
+                                "df3f079de6961496f0460dcfdbf9bca3",
+                                "f970e2767d0cfe75876ea857f92e319b",
+                                "22d424f309c391d7a2c2f25fbdfb70ea"};
 
 // Open socket for specified port.
 //
@@ -158,7 +158,6 @@ void closeServer(int serverSocket, fd_set *openSockets, int *maxfds)
 {
     servers.erase(serverSocket);
 
-    std::cout<< "closing server"<<std::endl;
     if(*maxfds == serverSocket)
     {
        for(auto const& p : servers)
@@ -270,17 +269,14 @@ void processServerCommand (char *buffer, int serverSockfd)
     else if((tokens[0].compare("KEEPALIVE") == 0) &&(tokens.size() == 1))
     {
       std::cout << "KEEPALIVE command Recieved" << std::endl;
-      //std::cout << "This has not been completed" <<std::endl;
-      keepAliveMtx.lock();
-      servers[serverSockfd]->keepAlive = std::clock();
-      keepAliveMtx.unlock();
+      std::cout << "This has not been completed" <<std::endl;
     }
     else if((tokens[0].compare("LISTROUTES") == 0) &&(tokens.size() == 1))
     {
       std::cout << "LISTROUTES command Recieved" << std::endl;
       std::cout << "This has not been completed" <<std::endl;
     }
-    else if((tokens[0].compare("CMD") == 0) && (tokens.size() == 4))
+    else if((tokens[0].compare("CMD") == 0) && (tokens.size() >= 4))
     {
         std::cout << "CMD command Recieved" << std::endl;
         std::cout << "This has not been completed" <<std::endl;
@@ -301,13 +297,32 @@ void processServerCommand (char *buffer, int serverSockfd)
                 }
                 // if the id information is filled out then I should just add it to my map
             }
+            else if(tokens[3].compare("FETCH") == 0) {
+                std::cout << "inside Fetch" << std::endl;
+                if(false/*stoi(tokens[1]) > 5 || stoi(tokens[1]) < 1*/) {
+                    return;
+                }
+                else {
+                    //int index = stoi(tokens[2]) - 1;
+                    int index = 1;
+                    serverMsg = SOH + "RSP," + token[2] + "," + ID + ",FETCH," + uniqueHashArr[index] + EOT;
+                }
+                std::cout << "serverMSG: " << serverMsg << std::endl;
+                if(send(serverSockfd, serverMsg.c_str(), serverMsg.length(), 0) == -1)
+                {
+                    perror("Failed to send hash message\n");
+                }
+                else{
+                    std::cout << "hash sent" << std::endl;
+                }
+            }
         }
         else {
             std::cout << "This message is not for me" << std::endl;
             // forward?
         }
     }
-    else if((tokens[0].compare("RSP") == 0) && (tokens.size() == 4))
+    else if((tokens[0].compare("RSP") == 0) && (tokens.size() >= 4))
     {
         std::cout << "RSP command Recieved" << std::endl;
         std::cout << "This has not been completed" <<std::endl;
@@ -317,6 +332,14 @@ void processServerCommand (char *buffer, int serverSockfd)
             {
                 servers[serverSockfd]->id = tokens[2];
             }
+            else if(tokens[3].compare("FETCH") == 0)
+            {
+                std::cout << "HASH: " << tokens[5] << std::endl;
+            }
+            else
+            {
+                std::cout << "Unknown response: " << buffer << std::endl;
+            }
         }
         else {
             std::cout << "This message is not for me" << std::endl;
@@ -325,16 +348,18 @@ void processServerCommand (char *buffer, int serverSockfd)
     }
     else if((tokens[0].compare("FETCH") == 0) && (tokens.size() == 2))
     {
-        std::string uniqueHashArr[5] = {"2990b1f8a30a2766e7d9ca603e22051f",
-                                        "31f23ba6e971170f63781be4d88b3ceb",
-                                        "df3f079de6961496f0460dcfdbf9bca3",
-                                        "f970e2767d0cfe75876ea857f92e319b",
-                                        "22d424f309c391d7a2c2f25fbdfb70ea"};
+        if(token[1] > 5 || token[1] < 1) {
+            serverMsg = SOH + "number must be between 1 and 5" + EOT;
+        }
+        else {
+            int index = stoi(tokens[1]) - 1;
+            serverMsg = SOH + uniqueHashArr[index] + EOT;
+        }
 
-
-        std::cout << "Fetch command Recieved" << std::endl;
-        std::cout << "This has not been completed" <<std::endl;
-
+        if(send(serverSockfd, serverMsg.c_str(), serverMsg.length(), 0) == -1)
+        {
+            perror("Failed to send hash message\n");
+        }
     }
     else if(tokens[0].compare("ID") == 0)
     {
@@ -433,22 +458,13 @@ void keepAlive()
     std::string keepAliveMsg = SOH + "KEEPALIVE" + EOT;
     while(true) {
         sleep(90);
-        keepAliveMtx.lock();
         for(auto const& pair : servers) {
             Server *server = pair.second;
-            double timePassed = servers[server->sockfd]->keepAlive / (double)CLOCKS_PER_SEC;
-            std::cout << "keepAlive: " << servers[server->sockfd]->keepAlive << std::endl;
-            std::cout << "time: "<< timePassed << std::endl;
-            if(timePassed >= 90) {
-              std::cout<<servers[server->sockfd] << ", get the fuck out" << std::endl;
-              closeServer(server->sockfd, &openSockets , &maxfds);
-            }
             if(send(servers[server->sockfd]->sockfd, keepAliveMsg.c_str(), keepAliveMsg.length(), 0) == -1) {
                 std::cout << "Failed to send Keepalive to server" << server->id << std::endl;
                 perror("Failed to send KEEPALIVE\n");
             }
         }
-        keepAliveMtx.unlock();
     }
 }
 
@@ -459,11 +475,10 @@ int main(int argc, char* argv[])
     int listenServerSock;
     int clientSock;                 // Socket of connecting client
     int serverSock;                 // Socket of connectubg server
-    //fd_set openSockets;             // Current open sockets
+    fd_set openSockets;             // Current open sockets
     fd_set readSockets;             // Socket list for select()
     fd_set exceptSockets;           // Exception socket list
-    //int maxfds;                     // Passed to select() as max fd in set
-    maxfds = 0;
+    int maxfds;                     // Passed to select() as max fd in set
     struct sockaddr_in client;
     socklen_t clientLen;
     char buffer[BUFSIZE];              // buffer for reading from clients
@@ -580,8 +595,6 @@ int main(int argc, char* argv[])
                     FD_SET(serverSock, &openSockets);
                     maxfds = std::max(maxfds, serverSock);
 
-
-
                     printf("Server connected from host %s, port, %hd.\n",
                            inet_ntoa (client.sin_addr),
                            (client.sin_port));
@@ -593,11 +606,6 @@ int main(int argc, char* argv[])
                     }
 
                     servers[serverSock] = new Server(serverSock);
-                    keepAliveMtx.lock();
-                    servers[serverSock]->keepAlive = std::clock();
-                    keepAliveMtx.unlock();
-                    std::cout<< "Setting timer now" << std::endl;
-
                 }
                 else
                 {
@@ -646,13 +654,10 @@ int main(int argc, char* argv[])
             }
             for(auto const& pair : servers)
             {
-
                 Server *server = pair.second;
-
                 std::cout << "server sockfd: " << server->sockfd << std::endl;
                 if(FD_ISSET(server->sockfd, &readSockets))
                 {
-                    std::cout << "It is set" << std::endl;
                     if(recv(server->sockfd, buffer, sizeof(buffer), MSG_DONTWAIT) == 0)
                     {
                         printf("Server closed connection: %d\n", server->sockfd);
