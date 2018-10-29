@@ -252,6 +252,7 @@ int clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buff
 void processServerCommand (char *buffer, int serverSockfd)
 {
     std::string serverMsg = ""; // automated message sent from server
+    std::cout << buffer << std::endl;
 
     std::vector<std::string> tokens;
     std::string token;
@@ -305,7 +306,8 @@ void processServerCommand (char *buffer, int serverSockfd)
                 else {
                     //int index = stoi(tokens[2]) - 1;
                     int index = 1;
-                    serverMsg = SOH + "RSP," + token[2] + "," + ID + ",FETCH," + uniqueHashArr[index] + EOT;
+                    std::cout<<"tokens[2]: " << tokens[2] << std::endl;
+                    serverMsg = SOH + "RSP," + tokens[2] + "," + ID + ",FETCH," + uniqueHashArr[index] + EOT;
                 }
                 std::cout << "serverMSG: " << serverMsg << std::endl;
                 if(send(serverSockfd, serverMsg.c_str(), serverMsg.length(), 0) == -1)
@@ -334,7 +336,7 @@ void processServerCommand (char *buffer, int serverSockfd)
             }
             else if(tokens[3].compare("FETCH") == 0)
             {
-                std::cout << "HASH: " << tokens[5] << std::endl;
+                std::cout << "HASH: " << tokens[4] << std::endl;
             }
             else
             {
@@ -372,85 +374,76 @@ void processServerCommand (char *buffer, int serverSockfd)
 
 void sendServerCommands(char* buffer, fd_set *openSockets, int *maxfds)
 {
-    //while(true) {
-        std::vector<std::string> tokens;
-        std::string token;
-        std::string serverMsg;
-        //char buffer[1025];
-        // Split command from server into tokens for parsing
-        //fgets(buffer, sizeof(buffer), stdin);
-        std::istringstream stream(buffer);
+    std::vector<std::string> tokens;
+    std::string token;
+    std::string serverMsg;
+    std::istringstream stream(buffer);
 
-        while(std::getline(stream, token, ',')) {
-          std::cout << token << std::endl;
-          tokens.push_back(token);
-        }
+    while(std::getline(stream, token, ',')) {
+        tokens.push_back(token);
+    }
 
-        std::cout << "TOKENS: "<< tokens[0] << " token size" << tokens.size() << std::endl;
+    if((tokens[0].compare("CONNECT") == 0) && (tokens.size() == 3))
+    {
+        if(servers.size() < MAXSERVERCONNECTIONS) {
+            int sockfd;
+            struct sockaddr_in serv_addr;
+            struct hostent *server;
 
-        if((tokens[0].compare("CONNECT") == 0) && (tokens.size() == 3))
-        {
-            if(servers.size() < MAXSERVERCONNECTIONS) {
-                int sockfd;
-                struct sockaddr_in serv_addr;
-                struct hostent *server;
+            sockfd = socket(AF_INET, SOCK_STREAM, 0); // Open tcp Socket
 
-                sockfd = socket(AF_INET, SOCK_STREAM, 0); // Open tcp Socket
+            server = gethostbyname(tokens[1].c_str());
 
-                server = gethostbyname(tokens[1].c_str());
+            bzero((char *) &serv_addr, sizeof(serv_addr));//fill the serv_addr with zeros
+            serv_addr.sin_family = AF_INET; // This is always set to AF_INET
+            bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+            serv_addr.sin_port = htons(atoi(tokens[2].c_str()));
 
-                bzero((char *) &serv_addr, sizeof(serv_addr));//fill the serv_addr with zeros
-                serv_addr.sin_family = AF_INET; // This is always set to AF_INET
-                bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-                serv_addr.sin_port = htons(atoi(tokens[2].c_str()));
+            if(connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) {
+                printf("Failed to open socket to server: %s\n", tokens[1].c_str());
+                perror("Connect failed: ");
+                exit(0);
+            } else {
+                printf("succesfull connect\n");
+                servers[sockfd] = new Server(sockfd);
 
-                if(connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) {
-                    printf("Failed to open socket to server: %s\n", tokens[1].c_str());
-                    perror("Connect failed: ");
-                    exit(0);
-                } else {
-                    printf("succesfull connect\n");
-                    servers[sockfd] = new Server(sockfd);
+                FD_SET(sockfd, openSockets);
+                *maxfds = std::max(sockfd, *maxfds);
 
-                    //fd_set
-                    FD_SET(sockfd, openSockets);
-                    *maxfds = std::max(sockfd, *maxfds);
-
-                    // send id to the server, their id is then reveiceid and
-                    // the processesd in process server commands function
-                    serverMsg = SOH + "CMD,," + ID + ",ID" + EOT; // to TOSERVERID is unknown so I leave it empty
-                    if(send(sockfd, serverMsg.c_str(), serverMsg.length(), 0) == -1)
-                    {
-                        perror("Failed to send id information\n");
-                    }
+                // send id to the server, their id is then reveiceid and
+                // the processesd in process server commands function
+                serverMsg = SOH + "CMD,," + ID + ",ID" + EOT; // to TOSERVERID is unknown so I leave it empty
+                if(send(sockfd, serverMsg.c_str(), serverMsg.length(), 0) == -1)
+                {
+                    perror("Failed to send id information\n");
                 }
             }
         }
-        // size >= 4 because the command can be longer than just one word, e.g. Fetch
-        else if((tokens[0].compare("CMD") == 0) && (tokens.size() >= 4))
-        {
-            std::cout << "CMD command" << std::endl;
-            serverMsg = SOH + buffer + EOT;
-            //std::cout << "server: " << (servers[tokens[1]].sockfd) << std::endl;
-            std::cout << serverMsg << std::endl;
-            for(auto const& pair : servers) {
-                Server *server = pair.second;
-                if(server->id == tokens[1]) {
-                    std::cout << "found server in map" << std::endl;
-                    if(send(servers[server->sockfd]->sockfd, serverMsg.c_str(), serverMsg.length(), 0) == -1) {
-                        perror("Failed to send CMD command\n");
-                    }
+    }
+    // size >= 4 because the command can be longer than just one word, e.g. Fetch
+    else if((tokens[0].compare("CMD") == 0) && (tokens.size() >= 4))
+    {
+        std::cout << "CMD command" << std::endl;
+        serverMsg = SOH + buffer + EOT;
+        //std::cout << "server: " << (servers[tokens[1]].sockfd) << std::endl;
+        std::cout << serverMsg << std::endl;
+        for(auto const& pair : servers) {
+            Server *server = pair.second;
+            if(server->id == tokens[1]) {
+                std::cout << "found server in map" << std::endl;
+                if(send(servers[server->sockfd]->sockfd, serverMsg.c_str(), serverMsg.length(), 0) == -1) {
+                    perror("Failed to send CMD command\n");
                 }
             }
         }
-        else if((tokens[0].compare("FETCH") && (tokens.size() == 2)))
-        {
+    }
+    else if((tokens[0].compare("FETCH") && (tokens.size() == 2)))
+    {
 
-        }
-        else {
-            std::cout << "Unknown server command: " << buffer << std::endl;
-        }
-    //}
+    }
+    else {
+        std::cout << "Unknown server command: " << buffer << std::endl;
+    }
 }
 
 void keepAlive()
@@ -559,15 +552,14 @@ int main(int argc, char* argv[])
         {
             if(FD_ISSET(0, &readSockets)) {
                 bzero(buffer, BUFSIZE);
-                if(read(0, buffer, BUFSIZE-1) < 0);
-                std::cout << buffer << std::endl;
+                if(read(0, buffer, BUFSIZE-1) < 0)
+                {
+                    std::cout << "failed to read commands" << std::endl;
+                }
                 sendServerCommands(buffer, &openSockets, &maxfds);
-
             }
-            // Accept  any new connections to the server
-            // allow servers to connect aswell
-            // - assume that it is a server
-            //for(int i = 0; i < FD_SETSIZE; i++) {
+            // Accept any new connections to the server
+            // Assume that the connection is from a client
             if(FD_ISSET(listenSock, &readSockets))
             {
 
@@ -586,6 +578,8 @@ int main(int argc, char* argv[])
                        ntohs (client.sin_port));
 
             }
+            // Accept any new connections to the server
+            // Assume that the connection is from a server
             else if(FD_ISSET(listenServerSock, &readSockets))
             {
                 std::cout << "map  size: " << servers.size() << std::endl;
@@ -621,7 +615,7 @@ int main(int argc, char* argv[])
                     close(serverSock);
                 }
             }
-            // Now check for commands from clients
+            // check for commands from clients
             for(auto const& pair : clients)
             {
                 Client *client = pair.second;
@@ -652,6 +646,7 @@ int main(int argc, char* argv[])
                     }
                 }
             }
+            // check for commands from servers
             for(auto const& pair : servers)
             {
                 Server *server = pair.second;
