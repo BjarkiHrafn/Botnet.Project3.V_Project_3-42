@@ -284,7 +284,7 @@ void processServerCommand (char *buffer, int serverSockfd)
 
         if(tokens[1] == ID || tokens[1].compare("") == 0) {
             std::cout << "I am receiveing a command" << std::endl;
-
+            std::cout << "tokens[3]" << tokens[3] << std::endl;
             if(tokens[3].compare("ID") == 0)
             {
                 // add the id to the database for the correct socket
@@ -299,14 +299,11 @@ void processServerCommand (char *buffer, int serverSockfd)
                 // if the id information is filled out then I should just add it to my map
             }
             else if(tokens[3].compare("FETCH") == 0) {
-                std::cout << "inside Fetch" << std::endl;
-                if(false/*stoi(tokens[1]) > 5 || stoi(tokens[1]) < 1*/) {
+                if(stoi(tokens[4]) > 5 || stoi(tokens[4]) < 1) {
                     return;
                 }
                 else {
-                    //int index = stoi(tokens[2]) - 1;
-                    int index = 1;
-                    std::cout<<"tokens[2]: " << tokens[2] << std::endl;
+                    int index = stoi(tokens[4]) - 1;
                     serverMsg = SOH + "RSP," + tokens[2] + "," + ID + ",FETCH," + uniqueHashArr[index] + EOT;
                 }
                 std::cout << "serverMSG: " << serverMsg << std::endl;
@@ -326,10 +323,8 @@ void processServerCommand (char *buffer, int serverSockfd)
     }
     else if((tokens[0].compare("RSP") == 0) && (tokens.size() >= 4))
     {
-        std::cout << "RSP command Recieved" << std::endl;
-        std::cout << "This has not been completed" <<std::endl;
         if(tokens[1] == ID) {
-            std::cout << "I am receiveing a command" << std::endl;
+            std::cout << "I am receiveing a response" << std::endl;
             if(tokens[3].compare("ID") == 0)
             {
                 servers[serverSockfd]->id = tokens[2];
